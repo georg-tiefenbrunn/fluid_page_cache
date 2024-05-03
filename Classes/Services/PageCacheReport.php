@@ -11,25 +11,28 @@ use T3\FluidPageCache\Cache\Backend\CustomSimpleFileBackend;
 use T3\FluidPageCache\PageCacheManager;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
 use TYPO3\CMS\Core\Cache\Backend\AbstractBackend;
+use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-class PageCacheReport
+readonly class PageCacheReport
 {
-    public function __construct(private readonly ConnectionPool $connectionPool)
-    {
+    public function __construct(
+        private CacheManager $cacheManager,
+        private ConnectionPool $connectionPool,
+    ) {
     }
 
     /**
      * @see \T3\FluidPageCache\Controller\BackendModuleController::mainAction()
      */
-    public function listSimpleFileBackendEntries($cacheManager, $pageUid): array
+    public function listSimpleFileBackendEntries(int $pageUid): array
     {
         $options = $GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations']['pages']['options'] ?? [];
 
         /** @var CustomSimpleFileBackend $backend */
         $backend = GeneralUtility::makeInstance(CustomSimpleFileBackend::class, '', $options);
-        $backend->setCache($cacheManager->getCache('pages'));
+        $backend->setCache($this->cacheManager->getCache('pages'));
 
         $keys = $backend->all();
         $result = [];
@@ -45,13 +48,13 @@ class PageCacheReport
     /**
      * @see \T3\FluidPageCache\Controller\BackendModuleController::mainAction()
      */
-    public function listRedisBackendEntries($cacheManager, $pageUid): array
+    public function listRedisBackendEntries(int $pageUid): array
     {
         $options = $GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations']['pages']['options'];
 
         /** @var CustomRedisBackend $backend */
         $backend = GeneralUtility::makeInstance(CustomRedisBackend::class, '', $options);
-        $backend->setCache($cacheManager->getCache('pages'));
+        $backend->setCache($this->cacheManager->getCache('pages'));
 
         $keys = $backend->all();
         $result = [];
@@ -68,7 +71,7 @@ class PageCacheReport
     /**
      * @see \T3\FluidPageCache\Controller\BackendModuleController::mainAction()
      */
-    public function listTypo3DatabaseBackendEntries($pageUid): array
+    public function listTypo3DatabaseBackendEntries(int $pageUid): array
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable('cache_pages_tags');
         $cacheTagRows = $queryBuilder
@@ -106,9 +109,9 @@ class PageCacheReport
         return $identifiers;
     }
 
-    public function getPagesCacheBackendName($cacheManager, bool $onlyLastPart = true): string
+    public function getPagesCacheBackendName(bool $onlyLastPart = true): string
     {
-        $cache = $cacheManager->getCache('pages');
+        $cache = $this->cacheManager->getCache('pages');
         $backend = get_class($cache->getBackend());
 
         if (!$onlyLastPart) {
@@ -126,7 +129,7 @@ class PageCacheReport
             return '';
         }
         $row = BackendUtility::getRecord($table, $uid);
-        return (string) $row[$labelField];
+        return (string)($row[$labelField] ?? '');
     }
 
     private function createTagRowByTagName(string $tagName): array
@@ -140,7 +143,7 @@ class PageCacheReport
             if ($table === 'pid') {
                 $table = 'pages';
             }
-        } elseif (strpos($tag, 'pageId_') === 0) {
+        } elseif (str_starts_with($tag, 'pageId_')) {
             $table = 'pages';
             $uid = (int)substr($tag, strlen('pageId_'));
         }
@@ -153,23 +156,25 @@ class PageCacheReport
         ];
     }
 
-    private function getCacheKeyInfo(AbstractBackend $backend, $keySanitized, $pageUid): ?array
+    private function getCacheKeyInfo(AbstractBackend $backend, string $keySanitized, int $pageUid): ?array
     {
         $info = $backend->get($keySanitized);
+        if (!is_string($info)) {
+            return null;
+        }
         $info = unserialize($info, ['allowed_classes' => false]);
-
-        if ($info['page_id'] !== $pageUid) {
+        if ((int)($info['page_id'] ?? 0) !== $pageUid) {
             return null;
         }
 
         $tags = [];
         foreach ($info['cacheTags'] ?? [] as $tagName) {
-            $tags[] = $this->createTagRowByTagName($tagName);
+            $tags[] = $this->createTagRowByTagName((string)$tagName);
         }
 
         return [
             'tags' => $tags,
-            'expires' => $info['expires'],
+            'expires' => (int)($info['expires'] ?? 0),
         ];
     }
 }
