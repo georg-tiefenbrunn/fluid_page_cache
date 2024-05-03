@@ -15,11 +15,12 @@ use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
-readonly class PageCacheReport
+/** @noinspection PhpClassCanBeReadonlyInspection */
+class PageCacheReport
 {
     public function __construct(
-        private CacheManager $cacheManager,
-        private ConnectionPool $connectionPool,
+        private readonly CacheManager $cacheManager,
+        private readonly ConnectionPool $connectionPool,
     ) {
     }
 
